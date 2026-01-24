@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  PHANTOM-DROID: Wake Handler LaunchAgent
+
+  Reconnects to Android device after Mac wakes from sleep.
+  Uses a 5-second delay to allow network to stabilize.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.phantom-droid.wake</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <string>sleep 5 &amp;&amp; __HOME__/bin/phantom-connect.sh</string>
+    </array>
+
+    <!-- Trigger on power events (approximated via system log changes) -->
+    <key>WatchPaths</key>
+    <array>
+        <string>/var/log/system.log</string>
+    </array>
+
+    <!-- Logging -->
+    <key>StandardOutPath</key>
+    <string>/tmp/phantom-droid-wake.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/phantom-droid-wake.err</string>
+
+    <!-- Environment -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:__HOME__/Library/Android/sdk/platform-tools</string>
+        <key>ANDROID_HOME</key>
+        <string>__HOME__/Library/Android/sdk</string>
+    </dict>
+</dict>
+</plist>

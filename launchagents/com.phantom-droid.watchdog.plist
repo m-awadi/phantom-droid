@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  PHANTOM-DROID: Watchdog LaunchAgent
+
+  Monitors Android wireless debugging connection and automatically reconnects.
+  Triggers:
+    - Every 2 minutes (StartInterval)
+    - When network configuration changes (WatchPaths)
+    - On user login (RunAtLoad)
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.phantom-droid.watchdog</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__HOME__/bin/phantom-watchdog.sh</string>
+    </array>
+
+    <!-- Run when user logs in -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Run every 2 minutes -->
+    <key>StartInterval</key>
+    <integer>120</integer>
+
+    <!-- Run when network changes -->
+    <key>WatchPaths</key>
+    <array>
+        <string>/Library/Preferences/SystemConfiguration/NetworkInterfaces.plist</string>
+        <string>/private/var/run/resolv.conf</string>
+    </array>
+
+    <!-- Logging -->
+    <key>StandardOutPath</key>
+    <string>/tmp/phantom-droid-watchdog.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/phantom-droid-watchdog.err</string>
+
+    <!-- Environment -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:__HOME__/Library/Android/sdk/platform-tools</string>
+        <key>ANDROID_HOME</key>
+        <string>__HOME__/Library/Android/sdk</string>
+    </dict>
+</dict>
+</plist>
