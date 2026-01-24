@@ -1,16 +1,14 @@
 #!/bin/bash
 #===============================================================================
-#  PHANTOM-DROID: Connection Watchdog
+#  PHANTOM-DROID: Connection Watchdog (Multi-Device)
 #===============================================================================
-#  Monitors the connection and automatically reconnects if dropped.
-#  Designed to run as a background service via LaunchAgent.
+#  Monitors all configured devices and reconnects if dropped.
 #===============================================================================
 
 set -uo pipefail
 
-# Configuration
-DEVICE_IP="${PHANTOM_DEVICE_IP:-192.168.1.100}"
-CONFIG_FILE="$HOME/.phantom-droid/port"
+CONFIG_DIR="$HOME/.phantom-droid"
+DEVICES_FILE="$CONFIG_DIR/devices.conf"
 ADB="${ANDROID_HOME:-$HOME/Library/Android/sdk}/platform-tools/adb"
 LOG_FILE="/tmp/phantom-droid.log"
 CONNECT_SCRIPT="$HOME/bin/phantom-connect.sh"
@@ -19,16 +17,24 @@ log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] WATCHDOG: $1" >> "$LOG_FILE"
 }
 
+# Get configured devices
+get_devices() {
+    grep -v '^#' "$DEVICES_FILE" 2>/dev/null | grep -v '^$' | grep '='
+}
+
 # Check if device is connected and responsive
-check_connection() {
-    # First check if device appears in adb devices
-    if ! $ADB devices 2>/dev/null | grep -q "$DEVICE_IP.*device"; then
+check_device() {
+    local name="$1"
+    local ip="$2"
+    local port=$(cat "$CONFIG_DIR/port_$name" 2>/dev/null || echo "40293")
+
+    # Check if device appears in adb devices
+    if ! $ADB devices 2>/dev/null | grep -q "$ip.*device"; then
         return 1
     fi
 
-    # Verify device is actually responsive with a simple command
-    local port=$(cat "$CONFIG_FILE" 2>/dev/null || echo "40293")
-    if $ADB -s "$DEVICE_IP:$port" shell echo "phantom-ping" 2>/dev/null | grep -q "phantom-ping"; then
+    # Verify device is responsive
+    if $ADB -s "$ip:$port" shell echo "phantom-ping" 2>/dev/null | grep -q "phantom-ping"; then
         return 0
     fi
 
@@ -37,16 +43,32 @@ check_connection() {
 
 # Main watchdog logic
 main() {
-    if check_connection; then
-        log "Device connected and responsive ✓"
-    else
-        log "Device not connected, attempting reconnect..."
-        if [[ -x "$CONNECT_SCRIPT" ]]; then
-            "$CONNECT_SCRIPT" >> "$LOG_FILE" 2>&1
+    local connected=0
+    local disconnected=0
+    local reconnected=0
+
+    while IFS='=' read -r name ip; do
+        [[ -z "$name" ]] && continue
+
+        if check_device "$name" "$ip"; then
+            log "$name ($ip): Connected ✓"
+            ((connected++))
         else
-            log "ERROR: Connect script not found at $CONNECT_SCRIPT"
+            log "$name ($ip): Disconnected, attempting reconnect..."
+            ((disconnected++))
+
+            if [[ -x "$CONNECT_SCRIPT" ]]; then
+                if "$CONNECT_SCRIPT" "$name" >> "$LOG_FILE" 2>&1; then
+                    log "$name ($ip): Reconnected ✓"
+                    ((reconnected++))
+                else
+                    log "$name ($ip): Reconnect failed ✗"
+                fi
+            fi
         fi
-    fi
+    done < <(get_devices)
+
+    log "Summary: $connected connected, $disconnected disconnected, $reconnected reconnected"
 }
 
 main

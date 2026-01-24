@@ -1,8 +1,8 @@
 # 👻 Phantom-Droid
 
-**Resilient Android Wireless Debugging for macOS**
+**Resilient Android Wireless Debugging for macOS - Multi-Device Support**
 
-Never plug in your Android device again. Phantom-Droid keeps your phone connected for wireless debugging 24/7, automatically reconnecting when ports change, networks switch, or your Mac wakes from sleep.
+Never plug in your Android devices again. Phantom-Droid keeps all your phones connected for wireless debugging 24/7, automatically reconnecting when ports change, networks switch, or your Mac wakes from sleep.
 
 ```
    ██████╗ ██╗  ██╗ █████╗ ███╗   ██╗████████╗ ██████╗ ███╗   ███╗
@@ -23,19 +23,21 @@ Never plug in your Android device again. Phantom-Droid keeps your phone connecte
 
 | Feature | Description |
 |---------|-------------|
-| 🔄 **Auto-Reconnect** | Watchdog monitors connection every 2 minutes |
-| 🔍 **Smart Discovery** | Uses mDNS + port scanning when port changes |
+| 📱 **Multi-Device** | Manage unlimited Android devices |
+| 🔄 **Auto-Reconnect** | Watchdog monitors all devices every 2 minutes |
+| 🔍 **Smart Discovery** | Uses mDNS + port scanning when ports change |
 | 🌐 **Network Aware** | Reconnects when Wi-Fi changes |
-| 😴 **Wake Handler** | Reconnects after Mac wakes from sleep |
-| 💾 **Port Persistence** | Remembers last working port |
-| 📊 **Status Dashboard** | Beautiful CLI status display |
+| 😴 **Wake Handler** | Reconnects all devices after Mac wakes from sleep |
+| 💾 **Port Persistence** | Remembers last working port per device |
+| 📊 **Status Dashboard** | Beautiful CLI status for all devices |
+| 🧙 **Pairing Wizard** | Interactive setup for new devices |
 
 ## 📋 Requirements
 
 - macOS 10.15+
-- Android 11+ device (for wireless debugging)
+- Android 11+ devices (for wireless debugging)
 - Android SDK with platform-tools
-- Both devices on the same Wi-Fi network
+- All devices on the same Wi-Fi network
 
 ## 🚀 Quick Start
 
@@ -47,88 +49,176 @@ cd phantom-droid
 ./install.sh
 ```
 
-### 2. One-Time Phone Setup
+### 2. Add Your First Device
 
-1. **Enable Developer Options**
-   - Settings → About Phone → Tap "Build Number" 7 times
-
-2. **Enable Wireless Debugging**
-   - Settings → Developer Options → Wireless debugging → ON
-
-3. **Assign Static IP** (recommended)
-   - Settings → Wi-Fi → Your Network → Edit → IP settings: Static
-   - Or configure DHCP reservation on your router
-
-### 3. Initial Pairing (one-time)
-
-On your phone: Wireless debugging → **Pair device with pairing code**
+Use the interactive pairing wizard:
 
 ```bash
-adb pair <ip>:<pairing-port> <6-digit-code>
+source ~/.zshrc   # Or open new terminal
+ppair
 ```
 
-### 4. Connect!
+Or manually:
 
 ```bash
-# Open new terminal or reload shell
-source ~/.zshrc
+# On phone: Settings → Developer Options → Wireless debugging → Pair device
+adb pair 192.168.1.100:37000 123456
 
-# Connect
-phantom
+# Add to phantom-droid
+padd myphone 192.168.1.100
 ```
+
+### 3. Connect!
+
+```bash
+phantom              # Connect default device
+phantom -a           # Connect ALL devices
+```
+
+## 📱 Multi-Device Management
+
+### Adding Devices
+
+```bash
+# Interactive wizard (recommended)
+ppair
+
+# Manual add
+padd oneplus 192.168.1.100
+padd pixel 192.168.1.101
+padd samsung 192.168.1.102
+```
+
+### Managing Devices
+
+```bash
+# List all devices
+plist
+phantom -l
+
+# Remove a device
+premove pixel
+
+# Set default device
+pdefault samsung
+
+# Edit config directly
+nano ~/.phantom-droid/devices.conf
+```
+
+### Configuration File
+
+```bash
+# ~/.phantom-droid/devices.conf
+oneplus=192.168.1.100
+pixel=192.168.1.101
+samsung=192.168.1.102
+```
+
+The first device is the default.
 
 ## 🎮 Commands
 
+### Connection Commands
+
 | Command | Description |
 |---------|-------------|
-| `phantom` | Connect to device (auto-discovers port) |
-| `pstatus` | Show connection status & device info |
-| `pshell` | Open ADB shell on device |
-| `plog` | View logcat |
-| `pinstall app.apk` | Install APK |
-| `pscrcpy` | Mirror screen (requires [scrcpy](https://github.com/Genymobile/scrcpy)) |
-| `pdisconnect` | Disconnect from device |
-| `prestart` | Force reconnect |
+| `phantom` | Connect default device |
+| `phantom pixel` | Connect specific device |
+| `phantom -a` | Connect ALL devices |
+| `phantom -l` | List all devices |
+| `pdisconnect` | Disconnect default device |
+| `pdisconnect -a` | Disconnect ALL devices |
+| `prestart` | Reconnect all devices |
 
-## 📁 What Gets Installed
+### Device Management
+
+| Command | Description |
+|---------|-------------|
+| `ppair` | Interactive pairing wizard |
+| `padd <name> <ip>` | Add new device |
+| `premove <name>` | Remove device |
+| `plist` | List configured devices |
+| `pdefault <name>` | Set default device |
+
+### Device Interaction
+
+| Command | Description |
+|---------|-------------|
+| `pstatus` | Show status of all devices |
+| `pshell` | Shell into default device |
+| `pshell pixel` | Shell into 'pixel' |
+| `plog` | Logcat from default device |
+| `plog pixel` | Logcat from 'pixel' |
+| `pinstall app.apk` | Install APK to default device |
+| `pscrcpy` | Mirror default device screen |
+| `pscrcpy pixel` | Mirror 'pixel' screen |
+
+## 📁 Project Structure
+
+```
+phantom-droid/
+├── README.md
+├── LICENSE
+├── install.sh
+├── uninstall.sh
+├── scripts/
+│   ├── phantom-connect.sh      # Smart multi-device connection
+│   ├── phantom-disconnect.sh   # Disconnect devices
+│   ├── phantom-status.sh       # Status dashboard
+│   ├── phantom-watchdog.sh     # Connection monitor (all devices)
+│   ├── phantom-device.sh       # Device management (add/remove)
+│   └── phantom-pair.sh         # Interactive pairing wizard
+└── launchagents/
+    ├── com.phantom-droid.watchdog.plist
+    └── com.phantom-droid.wake.plist
+```
+
+### Installed Files
 
 ```
 ~/bin/
-├── phantom-connect.sh      # Smart connection script
-├── phantom-disconnect.sh   # Disconnect script
-├── phantom-status.sh       # Status display
-└── phantom-watchdog.sh     # Connection monitor
+├── phantom-connect.sh
+├── phantom-disconnect.sh
+├── phantom-status.sh
+├── phantom-watchdog.sh
+├── phantom-device.sh
+└── phantom-pair.sh
 
 ~/Library/LaunchAgents/
-├── com.phantom-droid.watchdog.plist   # Auto-reconnect service
-└── com.phantom-droid.wake.plist       # Wake handler
+├── com.phantom-droid.watchdog.plist
+└── com.phantom-droid.wake.plist
 
 ~/.phantom-droid/
-├── device_ip               # Configured device IP
-└── port                    # Last known working port
+├── devices.conf          # Device configuration
+├── port_oneplus          # Saved port for 'oneplus'
+├── port_pixel            # Saved port for 'pixel'
+└── ...
 ```
 
 ## 🔧 Configuration
 
-### Change Device IP
-
-Edit `~/.phantom-droid/device_ip` or set environment variable:
+### View/Edit Devices
 
 ```bash
-export PHANTOM_DEVICE_IP="192.168.1.200"
+# List devices
+plist
+
+# Edit config file
+nano ~/.phantom-droid/devices.conf
 ```
 
 ### View Logs
 
 ```bash
-# Connection logs
+# All logs
 tail -f /tmp/phantom-droid.log
 
 # Watchdog logs
 tail -f /tmp/phantom-droid-watchdog.log
 ```
 
-### Manual Service Control
+### Service Control
 
 ```bash
 # Stop watchdog
@@ -136,11 +226,15 @@ launchctl unload ~/Library/LaunchAgents/com.phantom-droid.watchdog.plist
 
 # Start watchdog
 launchctl load ~/Library/LaunchAgents/com.phantom-droid.watchdog.plist
+
+# Check status
+launchctl list | grep phantom
 ```
 
 ## 🗑️ Uninstall
 
 ```bash
+cd phantom-droid
 ./uninstall.sh
 ```
 
@@ -148,35 +242,45 @@ launchctl load ~/Library/LaunchAgents/com.phantom-droid.watchdog.plist
 
 ### "Could not connect to device"
 
-1. **Check Wi-Fi**: Both devices must be on the same network
+1. **Check Wi-Fi**: Device must be on same network as Mac
 2. **Check Wireless Debugging**: Must be enabled on phone
-3. **Re-pair**: The pairing might have expired
-   ```bash
-   adb pair <ip>:<port> <code>
-   ```
+3. **Re-pair**: `adb pair <ip>:<port> <code>`
+4. **Check IP**: Device IP may have changed
 
 ### Port keeps changing
 
-This is normal on Android 11+. Phantom-Droid handles this automatically via:
+This is normal on Android 11+. Phantom-Droid handles this via:
 1. mDNS discovery
 2. Port range scanning (37000-45000)
 
-### Connection drops frequently
+### One device connects, another doesn't
 
-- Keep phone plugged into power
-- Disable battery optimization for "Wireless debugging"
-- Use 5GHz Wi-Fi if available
+- Each device needs separate pairing
+- Run `ppair` for each new device
+- Verify each device has correct static IP
+
+### Watchdog not running
+
+```bash
+# Check status
+launchctl list | grep phantom-droid
+
+# Reload
+launchctl unload ~/Library/LaunchAgents/com.phantom-droid.watchdog.plist
+launchctl load ~/Library/LaunchAgents/com.phantom-droid.watchdog.plist
+```
 
 ## 🏠 Physical Setup Tips
 
-For a dedicated debugging phone:
+For dedicated debugging phones:
 
 | Component | Recommendation |
 |-----------|----------------|
-| **Charger** | Use slow charger (5V/1A) to preserve battery |
-| **Location** | Well-ventilated, away from heat |
+| **Charger** | Use slow charger (5V/1A) per device |
+| **Location** | Well-ventilated area |
 | **Screen** | Set timeout to 15 seconds |
 | **Wi-Fi** | Developer Options → Keep Wi-Fi on during sleep → Always |
+| **Static IP** | Assign via router DHCP reservation |
 
 ## 📄 License
 
@@ -188,4 +292,4 @@ Created with ❤️ for Android developers who are tired of cables.
 
 ---
 
-*Your phone is always there. Invisible. Connected. Like a phantom.* 👻
+*Your phones are always there. Invisible. Connected. Like phantoms.* 👻
