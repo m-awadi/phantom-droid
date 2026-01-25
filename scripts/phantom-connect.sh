@@ -217,6 +217,15 @@ connect_device() {
     return 1
 }
 
+# Reset ADB server (clears stale connections)
+reset_adb() {
+    log_info "Resetting ADB server (clearing stale connections)..."
+    $ADB kill-server 2>/dev/null || true
+    sleep 1
+    $ADB start-server 2>/dev/null || true
+    log_success "ADB server reset"
+}
+
 # Show usage
 show_usage() {
     echo ""
@@ -224,6 +233,7 @@ show_usage() {
     echo ""
     echo -e "${BOLD}Options:${NC}"
     echo "  -a, --all        Connect to all configured devices"
+    echo "  -r, --reset      Reset ADB server before connecting (clears stale connections)"
     echo "  -l, --list       List configured devices"
     echo "  -h, --help       Show this help"
     echo ""
@@ -231,6 +241,7 @@ show_usage() {
     echo "  phantom-connect.sh              # Connect to default device"
     echo "  phantom-connect.sh oneplus      # Connect to 'oneplus'"
     echo "  phantom-connect.sh -a           # Connect to all devices"
+    echo "  phantom-connect.sh -r           # Reset ADB and connect"
     echo "  phantom-connect.sh -l           # List devices"
     echo ""
     echo -e "${BOLD}Configuration:${NC} $DEVICES_FILE"
@@ -276,9 +287,9 @@ list_devices() {
 main() {
     init_devices_file
     check_adb
-    start_adb_server
 
     local connect_all=false
+    local reset_server=false
     local device=""
 
     # Parse arguments
@@ -286,6 +297,10 @@ main() {
         case "$1" in
             -a|--all)
                 connect_all=true
+                shift
+                ;;
+            -r|--reset)
+                reset_server=true
                 shift
                 ;;
             -l|--list)
@@ -307,6 +322,13 @@ main() {
                 ;;
         esac
     done
+
+    # Reset ADB if requested, otherwise just start server
+    if [[ "$reset_server" == true ]]; then
+        reset_adb
+    else
+        start_adb_server
+    fi
 
     echo ""
     echo -e "${CYAN}╔═══════════════════════════════════════╗${NC}"

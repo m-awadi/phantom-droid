@@ -126,6 +126,7 @@ The first device is the default.
 | `phantom` | Connect default device |
 | `phantom pixel` | Connect specific device |
 | `phantom -a` | Connect ALL devices |
+| `phantom -r` | Reset ADB and reconnect (fixes stale connections) |
 | `phantom -l` | List all devices |
 | `pdisconnect` | Disconnect default device |
 | `pdisconnect -a` | Disconnect ALL devices |
@@ -238,6 +239,48 @@ cd phantom-droid
 ./uninstall.sh
 ```
 
+## ⚠️ Wireless Debugging Limitations
+
+Android's wireless debugging has built-in limitations that **cannot be bypassed without root**:
+
+| Event | What Happens | Solution |
+|-------|--------------|----------|
+| **Phone reboot** | Wireless debugging disabled | Must re-enable manually on phone |
+| **Network change** | Wireless debugging disabled | Must re-enable manually on phone |
+| **Toggle off/on** | Port changes, may need re-pair | Phantom auto-discovers new port |
+| **Authorization prompt** | Connection shows "offline" | Tap "Allow" on phone |
+
+### Maximizing Uptime (Without Root)
+
+To keep your device connected as long as possible:
+
+1. **Stable WiFi** - Keep phone on the same network, avoid switching
+2. **Always allow** - Check "Always allow from this computer" when authorizing
+3. **Keep powered** - Plug phone into charger to prevent battery saver
+4. **Avoid reboots** - Don't restart the phone unless necessary
+5. **Static IP** - Assign via router DHCP reservation
+
+### Truly Touchless Options
+
+| Method | Touchless | Survives Reboot | Setup |
+|--------|-----------|-----------------|-------|
+| **Wireless debugging** | ❌ | ❌ | Enable on phone after each reboot |
+| **USB + tcpip** | ⚠️ | ❌ | Run `adb tcpip 5555` via USB after reboot |
+| **USB hub** | ✅ | ✅ | Keep phone permanently connected via USB |
+| **Root + Magisk** | ✅ | ✅ | Install ADB over TCP module |
+
+### With Root (Magisk)
+
+For truly touchless operation, root your device and either:
+
+1. Install **ADB over TCP** Magisk module, or
+2. Add to a boot script:
+```bash
+setprop service.adb.tcp.port 5555
+stop adbd
+start adbd
+```
+
 ## 🐛 Troubleshooting
 
 ### "Could not connect to device"
@@ -246,6 +289,11 @@ cd phantom-droid
 2. **Check Wireless Debugging**: Must be enabled on phone
 3. **Re-pair**: `adb pair <ip>:<port> <code>`
 4. **Check IP**: Device IP may have changed
+5. **Reset ADB**: Run `adb kill-server && phantom` to clear stale connections
+
+### Device shows "offline"
+
+Your phone is showing an authorization prompt. Check your phone screen and tap **"Allow"**. Check "Always allow from this computer" to avoid this in the future.
 
 ### Port keeps changing
 
@@ -258,6 +306,12 @@ This is normal on Android 11+. Phantom-Droid handles this via:
 - Each device needs separate pairing
 - Run `ppair` for each new device
 - Verify each device has correct static IP
+
+### Connection fails after network change
+
+Wireless debugging disables itself when the network changes. You must:
+1. Re-enable wireless debugging on the phone
+2. Run `phantom` to reconnect
 
 ### Watchdog not running
 
