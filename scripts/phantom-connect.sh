@@ -2,35 +2,35 @@
 #===============================================================================
 #  PHANTOM-DROID: Resilient Android Wireless Debugging Connection
 #===============================================================================
-#  Multi-device support - connects to any configured Android device.
-#  Uses mDNS discovery, port scanning, and persistent configuration.
+#  Multi-device support with timeout protection, health checks, and self-healing.
+#  Uses mDNS discovery, limited port scanning, and persistent configuration.
 #===============================================================================
 
-set -euo pipefail
+set -uo pipefail
+
+# Get script directory and source library
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/phantom-lib.sh" 2>/dev/null || source "$HOME/bin/phantom-lib.sh" 2>/dev/null || {
+    echo "Error: phantom-lib.sh not found"
+    exit 1
+}
 
 # Configuration
-CONFIG_DIR="$HOME/.phantom-droid"
 DEVICES_FILE="$CONFIG_DIR/devices.conf"
-ADB="${ANDROID_HOME:-$HOME/Library/Android/sdk}/platform-tools/adb"
-LOG_FILE="/tmp/phantom-droid.log"
 DEFAULT_PORT="40293"
 PORT_RANGE_START=37000
 PORT_RANGE_END=45000
-PORT_SCAN_STEP=100
-
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-BOLD='\033[1m'
-NC='\033[0m'
 
 # Ensure config directory exists
 mkdir -p "$CONFIG_DIR"
 
-# Initialize devices file if not exists
+# Setup cleanup on exit
+setup_cleanup_trap
+
+#===============================================================================
+#  DEVICE CONFIGURATION
+#===============================================================================
+
 init_devices_file() {
     if [[ ! -f "$DEVICES_FILE" ]]; then
         cat > "$DEVICES_FILE" << 'EOF'
@@ -39,7 +39,6 @@ init_devices_file() {
 # Example:
 #   oneplus=192.168.1.100
 #   pixel=192.168.1.101
-#   samsung=192.168.1.102
 #
 # The first device is the default when no device is specified.
 
@@ -48,121 +47,61 @@ EOF
     fi
 }
 
-log() {
-    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    echo "[$timestamp] $1" >> "$LOG_FILE"
-    echo -e "$1"
-}
-
-log_success() { log "${GREEN}✓ $1${NC}"; }
-log_error() { log "${RED}✗ $1${NC}"; }
-log_info() { log "${BLUE}→ $1${NC}"; }
-log_warn() { log "${YELLOW}⚠ $1${NC}"; }
-
-# Get list of configured devices
 get_devices() {
-    grep -v '^#' "$DEVICES_FILE" 2>/dev/null | grep -v '^$' | grep '='
+    grep -v '^#' "$DEVICES_FILE" 2>/dev/null | grep -v '^$' | grep '=' || true
 }
 
-# Get device IP by name
 get_device_ip() {
     local name="$1"
     grep "^${name}=" "$DEVICES_FILE" 2>/dev/null | cut -d= -f2
 }
 
-# Get first (default) device name
 get_default_device() {
     get_devices | head -1 | cut -d= -f1
 }
 
-# Get all device names
 get_device_names() {
     get_devices | cut -d= -f1
 }
 
-# Get saved port for a device
 get_saved_port() {
     local device="$1"
     cat "$CONFIG_DIR/port_$device" 2>/dev/null || echo "$DEFAULT_PORT"
 }
 
-# Save port for a device
 save_port() {
     local device="$1"
     local port="$2"
     echo "$port" > "$CONFIG_DIR/port_$device"
 }
 
-# Check if adb exists
-check_adb() {
-    if [[ ! -x "$ADB" ]]; then
-        log_error "ADB not found at: $ADB"
-        log_info "Set ANDROID_HOME environment variable or install Android SDK"
-        exit 1
-    fi
-}
+#===============================================================================
+#  CONNECTION CHECKS
+#===============================================================================
 
-# Ensure adb server is running
-start_adb_server() {
-    $ADB start-server 2>/dev/null || true
-}
-
-# Check if device is connected
 is_connected() {
     local ip="$1"
-    $ADB devices 2>/dev/null | grep -q "$ip.*device"
+    local devices_output
+
+    devices_output=$(safe_adb_devices 2>/dev/null) || return 1
+    echo "$devices_output" | grep -q "$ip.*device"
 }
 
-# Get connected port for an IP
 get_connected_port() {
     local ip="$1"
-    $ADB devices 2>/dev/null | grep "$ip" | cut -d: -f2 | cut -d$'\t' -f1
+    safe_adb_devices 2>/dev/null | grep "$ip" | cut -d: -f2 | cut -d$'\t' -f1
 }
 
-# Try to connect to a specific IP:port
-try_connect() {
-    local ip="$1"
-    local port="$2"
-    local result=$($ADB connect "$ip:$port" 2>&1)
-    if echo "$result" | grep -q "connected"; then
-        return 0
-    fi
-    return 1
-}
-
-# Disconnect from a port
 disconnect_port() {
     local ip="$1"
     local port="$2"
-    $ADB disconnect "$ip:$port" 2>/dev/null || true
+    run_with_timeout 3 "$ADB" disconnect "$ip:$port" 2>/dev/null || true
 }
 
-# Discover device via mDNS
-discover_mdns() {
-    local ip="$1"
-    local services=$($ADB mdns services 2>/dev/null || echo "")
-    local discovered=$(echo "$services" | grep -i "adb.*connect" | grep "$ip" | awk '{print $NF}' | cut -d: -f2 | head -1)
-    if [[ -n "$discovered" ]]; then
-        echo "$discovered"
-        return 0
-    fi
-    return 1
-}
+#===============================================================================
+#  CONNECTION LOGIC
+#===============================================================================
 
-# Scan port range
-scan_ports() {
-    local ip="$1"
-    for port in $(seq $PORT_RANGE_START $PORT_SCAN_STEP $PORT_RANGE_END); do
-        if try_connect "$ip" "$port"; then
-            echo "$port"
-            return 0
-        fi
-        disconnect_port "$ip" "$port"
-    done
-    return 1
-}
-
-# Connect to a single device
 connect_device() {
     local device_name="$1"
     local device_ip=$(get_device_ip "$device_name")
@@ -173,6 +112,11 @@ connect_device() {
         return 1
     fi
 
+    # Check circuit breaker
+    if should_skip_device "$device_name"; then
+        return 1
+    fi
+
     log_info "Connecting to ${BOLD}$device_name${NC}${BLUE} ($device_ip)...${NC}"
 
     # Check if already connected
@@ -180,53 +124,64 @@ connect_device() {
         local port=$(get_connected_port "$device_ip")
         save_port "$device_name" "$port"
         log_success "Already connected to $device_name ($device_ip:$port)"
+        update_backoff "$device_name" "true"
+        update_circuit "$device_name" "true"
         return 0
     fi
 
-    # Try saved port first
+    # Strategy 1: Try saved port
     local saved_port=$(get_saved_port "$device_name")
     log_info "Trying saved port: $saved_port"
-    if try_connect "$device_ip" "$saved_port"; then
+    if safe_adb_connect "$device_ip" "$saved_port"; then
         save_port "$device_name" "$saved_port"
         log_success "Connected to $device_name ($device_ip:$saved_port)"
+        update_backoff "$device_name" "true"
+        update_circuit "$device_name" "true"
         return 0
     fi
 
-    # Try mDNS discovery
+    # Strategy 2: Try mDNS discovery
     log_info "Scanning via mDNS..."
-    local mdns_port=$(discover_mdns "$device_ip" || echo "")
+    local mdns_port=$(safe_mdns_discover "$device_ip")
     if [[ -n "$mdns_port" ]]; then
         log_info "mDNS discovered port: $mdns_port"
-        if try_connect "$device_ip" "$mdns_port"; then
+        if safe_adb_connect "$device_ip" "$mdns_port"; then
             save_port "$device_name" "$mdns_port"
             log_success "Connected to $device_name via mDNS ($device_ip:$mdns_port)"
+            update_backoff "$device_name" "true"
+            update_circuit "$device_name" "true"
             return 0
         fi
     fi
 
-    # Fallback: scan port range
-    log_info "Scanning port range..."
-    local scanned_port=$(scan_ports "$device_ip" || echo "")
+    # Strategy 3: Limited port scan (prevents hung process accumulation)
+    log_info "Scanning common ports (limited)..."
+    local scanned_port=$(scan_ports_limited "$device_ip" 5)
     if [[ -n "$scanned_port" ]]; then
         save_port "$device_name" "$scanned_port"
         log_success "Connected to $device_name via scan ($device_ip:$scanned_port)"
+        update_backoff "$device_name" "true"
+        update_circuit "$device_name" "true"
         return 0
     fi
 
+    # All strategies failed
     log_error "Could not connect to $device_name ($device_ip)"
+    log_info "Troubleshooting:"
+    log_info "  1. Verify wireless debugging is enabled on phone"
+    log_info "  2. Check phone is on same network"
+    log_info "  3. Try: phantom -r (reset ADB server)"
+    log_info "  4. Run: ppair (pairing wizard)"
+
+    update_backoff "$device_name" "false"
+    update_circuit "$device_name" "false"
     return 1
 }
 
-# Reset ADB server (clears stale connections)
-reset_adb() {
-    log_info "Resetting ADB server (clearing stale connections)..."
-    $ADB kill-server 2>/dev/null || true
-    sleep 1
-    $ADB start-server 2>/dev/null || true
-    log_success "ADB server reset"
-}
+#===============================================================================
+#  DISPLAY FUNCTIONS
+#===============================================================================
 
-# Show usage
 show_usage() {
     echo ""
     echo -e "${CYAN}Usage:${NC} phantom-connect.sh [OPTIONS] [DEVICE]"
@@ -248,7 +203,6 @@ show_usage() {
     echo ""
 }
 
-# List devices
 list_devices() {
     echo ""
     echo -e "${CYAN}╔═══════════════════════════════════════════════════════════╗${NC}"
@@ -262,9 +216,12 @@ list_devices() {
         [[ -z "$name" ]] && continue
         local port=$(get_saved_port "$name")
         local status="${RED}○ Disconnected${NC}"
+        local circuit=$(get_circuit_state "$name")
 
         if is_connected "$ip"; then
             status="${GREEN}● Connected${NC}"
+        elif [[ "$circuit" == "open" ]]; then
+            status="${YELLOW}◌ Circuit Open${NC}"
         fi
 
         local default_marker=""
@@ -283,10 +240,19 @@ list_devices() {
     echo ""
 }
 
-# Main
+#===============================================================================
+#  MAIN
+#===============================================================================
+
 main() {
     init_devices_file
-    check_adb
+
+    # Validate ADB exists
+    if [[ ! -x "$ADB" ]]; then
+        log_error "ADB not found at: $ADB"
+        log_info "Set ANDROID_HOME environment variable or install Android SDK"
+        exit 1
+    fi
 
     local connect_all=false
     local reset_server=false
@@ -323,11 +289,11 @@ main() {
         esac
     done
 
-    # Reset ADB if requested, otherwise just start server
+    # Reset or ensure ADB server
     if [[ "$reset_server" == true ]]; then
-        reset_adb
+        reset_adb_server
     else
-        start_adb_server
+        ensure_adb_server
     fi
 
     echo ""
@@ -368,7 +334,7 @@ main() {
 
     echo ""
     echo -e "${BOLD}Connected devices:${NC}"
-    $ADB devices -l | tail -n +2 | grep -v "^$" | while read line; do
+    safe_adb_devices -l 2>/dev/null | tail -n +2 | grep -v "^$" | while read line; do
         echo -e "  ${GREEN}●${NC} $line"
     done
     echo ""

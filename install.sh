@@ -206,6 +206,7 @@ alias ppair='phantom-pair.sh'
 alias pconnect='phantom-connect.sh'
 alias pdisconnect='phantom-disconnect.sh'
 alias prestart='phantom-disconnect.sh -a && phantom-connect.sh -a'
+alias preset='phantom-reset.sh'
 
 # Device management
 alias padd='phantom-device.sh add'
